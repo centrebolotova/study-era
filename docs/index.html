@@ -883,7 +883,7 @@ function settingsSheet() {
         if (!em || !pw) { err.textContent = 'Введи почту и пароль'; return; }
         err.textContent = 'Секунду…';
         const r = id === 'lin' ? await sb.auth.signInWithPassword({ email: em, password: pw }) : await sb.auth.signUp({ email: em, password: pw });
-        if (r.error) { err.textContent = /invalid/i.test(r.error.message) ? 'Неверная почта или пароль' : r.error.message; return; }
+        if (r.error) { err.textContent = /invalid/i.test(r.error.message) ? 'Неверная почта или пароль' : /load failed|fetch|network/i.test(r.error.message) ? 'Сервер синхронизации сейчас недоступен (его адрес блокируют). Приложение работает, но отметки пока сохраняются только на этом устройстве.' : r.error.message; return; }
         close(); toast('Готово! Синхронизирую…');
       }
       if (id === 'snow') { syncNow(); close(); }
@@ -930,7 +930,7 @@ async function syncNow() {
     if (changed) { applyTheme(); if (!closeSheet) render(); }
   } catch (e) {
     console.warn(e); syncState = 'err';
-    syncErr = /fetch|network|load/i.test(e.message || '') ? 'Нет интернета, синхронизирую позже' : (e.message || String(e));
+    syncErr = /fetch|network|load/i.test(e.message || '') ? 'Нет связи с сервером синхронизации, сохраняю на этом устройстве' : (e.message || String(e));
   } finally { syncing = false; dot(); if (again) { again = false; syncSoon(); } }
 }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { render(); syncNow(); } });
