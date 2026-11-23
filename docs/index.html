@@ -190,6 +190,12 @@ input,select,textarea{font:inherit;color:var(--choco)}
 .sumcard .s b{font-family:'Dela Gothic One';font-weight:400;font-size:22px;display:block}
 
 /* пустые состояния и стикеры */
+.hab{display:flex;gap:10px;align-items:center;background:var(--bg);border:2px solid var(--choco);border-radius:16px;padding:10px;box-shadow:2px 2px 0 var(--choco)}
+.hab .tx{flex:1;min-width:0}.hab .tt{font-weight:900;font-size:15px;line-height:1.2}.hab .sub{font-size:12.5px;opacity:.75;margin-top:2px}
+.hab .fl{flex:none;margin:-6px 0}
+.hdays{display:flex;gap:3px;margin-top:6px}
+.hdays .hd{width:14px;height:14px;border-radius:4px;background:rgba(62,36,32,.12);display:block}
+.hdays .hd.on{background:#FF7A1A}.hdays .hd.td{outline:2px solid var(--choco);outline-offset:1px}
 .emptyc{display:flex;align-items:center;gap:12px;padding:6px 0}
 .emptyc img{width:74px;transform:rotate(-8deg);filter:drop-shadow(2px 3px 0 rgba(62,36,32,.18))}
 .emptyc .hand{font-size:24px;line-height:1.1}
@@ -415,7 +421,26 @@ function put(it, quiet) {
 }
 const cfg = () => S.items.settings || { id: 'settings', kind: 'settings', speed: 1, theme: 'pink', updated: 1 };
 function setCfg(k, v) { const c = { ...cfg() }; c[k] = v; put(c); applyTheme(); }
-const all = () => Object.values(S.items).filter(i => !i.deleted && i.kind !== 'settings');
+const all = () => Object.values(S.items).filter(i => !i.deleted && i.kind !== 'settings' && i.kind !== 'habit');
+const DEF_HABITS = [{ id: 'speak', t: 'Группа спикинга: один вариант устной части', subj: 'en' }];
+const habits = () => cfg().habits || DEF_HABITS;
+const hDone = (h, d) => { const x = S.items[`h-${h}-${d}`]; return !!(x && x.done && !x.deleted); };
+function streak(h) {
+  let d = new Date(); if (!hDone(h, iso(d))) d = addD(d, -1);
+  let n = 0; while (hDone(h, iso(d)) && n < 3650) { n++; d = addD(d, -1); }
+  return n;
+}
+function bestStreak(h) {
+  const days = Object.values(S.items).filter(x => x.kind === 'habit' && x.habit === h && x.done && !x.deleted).map(x => x.day).sort();
+  let best = 0, run = 0, prev = null;
+  for (const d of days) { run = prev && iso(addD(pd(prev), 1)) === d ? run + 1 : 1; best = Math.max(best, run); prev = d; }
+  return best;
+}
+function flame(n) {
+  const c = n >= 30 ? ['#B07CFF', '#FF4F9A'] : n >= 7 ? ['#FF4F9A', '#FFB020'] : n >= 1 ? ['#FF7A1A', '#FFD23F'] : ['#D8CFCB', '#F1ECEA'];
+  return `<svg viewBox="0 0 60 72" width="54" height="64"><path d="M30 2C34 18 52 26 52 46a22 22 0 0 1-44 0c0-10 6-16 10-20 0 8 4 12 8 12C24 26 26 12 30 2z" fill="${c[0]}" stroke="#3E2420" stroke-width="3" stroke-linejoin="round"/><path d="M30 34c3 7 11 10 11 18a11 11 0 0 1-22 0c0-5 3-8 5-10 1 4 3 5 5 5-1-5 0-9 1-13z" fill="${c[1]}"/><text x="30" y="60" text-anchor="middle" font-family="Dela Gothic One" font-size="${n > 99 ? 12 : 16}" fill="#3E2420">${n}</text></svg>`;
+}
+function nextGoal(n) { for (const g of [3, 7, 14, 21, 30, 40, 50, 75, 100, 150, 200, 365]) if (n < g) return g; return n + 100; }
 
 /* =================== даты =================== */
 const pad = n => String(n).padStart(2, '0');
@@ -481,6 +506,7 @@ function itemRow(i, opts = {}) {
   if (i.kind === 'hw') chips.push('<span class="chip lt">ДЗ</span>');
   if (i.kind === 'test') chips.push('<span class="chip lt">пробник / чекпоинт</span>');
   if (i.kind === 'deadline') chips.push('<span class="chip crit">дедлайн</span>');
+  if (i.kind === 'call') chips.push('<span class="chip lt">☎ созвон</span>');
   if (i.fmt) chips.push(`<span class="chip lt">${esc(i.fmt)}</span>`);
   if (i.crit) chips.push('<span class="chip crit">♥ крит. грамматика</span>');
   if (i.optional) chips.push('<span class="chip lt">по желанию</span>');
@@ -504,6 +530,40 @@ function renderTabs() {
 }
 
 const QUOTES = ['do it for the plot!!!', 'сегодня будет хороший день', 'маленький шаг — тоже шаг', 'ЕГЭ боится тех, кто начал', 'universe, show me how good it gets', 'один урок — и ты молодец', 'have a sweet day'];
+
+function vHabits() {
+  const t = today();
+  const rows = habits().map(h => {
+    const done = hDone(h.id, t), n = streak(h.id), g = nextGoal(n), best = bestStreak(h.id);
+    const last = [...Array(14)].map((_, k) => { const d = iso(addD(new Date(), k - 13)); return `<i class="hd${hDone(h.id, d) ? ' on' : ''}${d === t ? ' td' : ''}"></i>`; }).join('');
+    return `<div class="hab s-${h.subj || 'ot'}">
+      <button class="ck${done ? ' on' : ''}" data-act="habit" data-h="${esc(h.id)}" aria-label="Отметить">${done ? ICK : ''}</button>
+      <div class="tx"><div class="tt">${esc(h.t)}</div>
+        <div class="sub">${n ? `огонёк ${n} ${dn(n)}` : 'начни огонёк сегодня'} · до ${g} — ещё ${g - n}${best > n ? ` · рекорд ${best}` : ''}</div>
+        <div class="hdays">${last}</div></div>
+      <div class="fl">${flame(n)}</div>
+    </div>`;
+  }).join('');
+  return `<section class="paper">
+    <div class="h" style="display:flex;align-items:center;gap:8px">Цели на сегодня <button class="mini" style="margin-left:auto" data-act="habits">изменить</button></div>
+    <div class="list">${rows || '<div class="muted">Целей пока нет — добавь кнопкой «изменить».</div>'}</div>
+  </section>`;
+}
+const dn = n => (n % 10 === 1 && n % 100 !== 11) ? 'день' : ([2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100)) ? 'дня' : 'дней';
+function habitsSheet() {
+  const list = habits();
+  sheet(`<div class="h" style="font-size:22px">Цели на каждый день</div>
+    <p style="margin:4px 0 8px">Показываются только на «Сегодня». За каждый день подряд растёт огонёк.</p>
+    <div id="hl">${list.map((h, k) => `<div class="cu"><div class="tx"><div class="tt">${esc(h.t)}</div><div class="sub">${SUBJ[h.subj || 'ot'].name}</div></div><button class="mini" data-del="${k}">убрать</button></div>`).join('')}</div>
+    <label class="fld">Новая цель<input id="hn" placeholder="например: 20 слов в Quizlet"></label>
+    <div class="seg" id="hs">${Object.entries(SUBJ).map(([k, v]) => `<button type="button" class="${k === 'en' ? 'on' : ''}" data-v="${k}">${v.name}</button>`).join('')}</div>
+    <div class="btns"><button class="btn pri" id="hadd">Добавить цель</button></div>`, (el) => {
+    let sj = 'en';
+    el.querySelector('#hs').onclick = e => { const b = e.target.closest('button'); if (!b) return; sj = b.dataset.v; el.querySelectorAll('#hs button').forEach(x => x.classList.toggle('on', x === b)); };
+    el.querySelector('#hl').onclick = e => { const b = e.target.closest('[data-del]'); if (!b) return; if (!confirm('Убрать цель? Огонёк по ней пропадёт с экрана.')) return; const hs = habits().filter((_, k) => k != b.dataset.del); setCfg('habits', hs); habitsSheet(); };
+    el.querySelector('#hadd').onclick = () => { const t = el.querySelector('#hn').value.trim(); if (!t) { toast('Напиши цель'); return; } setCfg('habits', [...habits(), { id: 'h' + Date.now().toString(36), t, subj: sj }]); habitsSheet(); };
+  });
+}
 
 function vToday() {
   const t = today(), tm = iso(addD(new Date(), 1)), d = new Date();
@@ -529,6 +589,7 @@ function vToday() {
     <div class="sec" style="margin-top:14px">Завтра</div>
     ${evBlock(tmr, addD(d, 1), false)}
   </section>
+  ${vHabits()}
   ${yest.length ? `<section class="paper"><div class="h">Вчера <small>отметь, что было</small></div><div class="list">${yest.map(i => itemRow(i)).join('')}</div><p class="muted" style="font-size:13px;margin:8px 0 0">Неотмеченные уроки сами уйдут в «Догнать».</p></section>` : ''}
   <div class="grid2">
     <section class="paper">
@@ -576,7 +637,7 @@ function vMonth() {
   const cells = [];
   for (let d = new Date(from); d <= to; d = addD(d, 1)) {
     const ds = iso(d), list = onDay(ds);
-    const pills = list.slice(0, 4).map(i => `<span class="p ${i.kind === 'deadline' || i.kind === 'test' ? 'dl' : i.subj}${i.skip ? ' sk' : ''}">${i.kind === 'hw' ? '✎ ' : i.time && i.time !== '23:59' ? '<i class="tmx">' + i.time + ' </i>' : ''}${esc(i.kind === 'hw' ? 'ДЗ ' + SUBJ[i.subj].short : i.kind === 'deadline' ? 'оплата' : i.kind === 'test' ? 'чекпоинт' : SUBJ[i.subj].short)}</span>`).join('');
+    const pills = list.slice(0, 4).map(i => `<span class="p ${i.kind === 'deadline' || i.kind === 'test' ? 'dl' : i.subj}${i.skip ? ' sk' : ''}">${i.kind === 'hw' ? '✎ ' : i.kind === 'call' ? '☎ ' : i.time && i.time !== '23:59' ? '<i class="tmx">' + i.time + ' </i>' : ''}${esc(i.kind === 'hw' ? 'ДЗ ' + SUBJ[i.subj].short : i.kind === 'deadline' ? 'оплата' : i.kind === 'test' ? 'чекпоинт' : SUBJ[i.subj].short)}</span>`).join('');
     const lab = d.getDate() === 1 || ds === iso(from) ? `<span class="ml">${MON[d.getMonth()].slice(0, 3)}</span>` : '';
     cells.push(`<button class="mc${ds < t ? ' past' : ''}${ds === t ? ' today' : ''}${d.getMonth() % 2 ? ' alt' : ''}" data-act="day" data-date="${ds}"><span class="n">${d.getDate()}${lab}</span>${pills}${list.length > 4 ? `<span class="muted" style="font-size:10px">+${list.length - 4}</span>` : ''}</button>`);
   }
@@ -720,10 +781,10 @@ function editItem(it = {}, preset = {}) {
     const parts = st.parts ? st.parts.map(p => p.t) : HW_PARTS[st.subj];
     el.querySelector('#ef').innerHTML = `
       <div class="h" style="font-size:22px">${isNew ? 'Добавить' : 'Изменить'}</div>
-      <div class="fld">Что<div class="seg" data-g="kind">${[['lesson', 'Урок'], ['hw', 'Домашка'], ['test', 'Пробник / чекпоинт'], ['todo', 'Своё дело']].map(([k, t]) => `<button type="button" class="${st.kind === k ? 'on' : ''}" data-v="${k}">${t}</button>`).join('')}</div></div>
+      <div class="fld">Что<div class="seg" data-g="kind">${[['lesson', 'Урок'], ['call', 'Созвон'], ['hw', 'Домашка'], ['test', 'Пробник / чекпоинт'], ['todo', 'Своё дело']].map(([k, t]) => `<button type="button" class="${st.kind === k ? 'on' : ''}" data-v="${k}">${t}</button>`).join('')}</div></div>
       <div class="fld">Предмет<div class="seg" data-g="subj">${Object.entries(SUBJ).map(([k, v]) => `<button type="button" class="${st.subj === k ? 'on' : ''}" data-v="${k}">${v.name}</button>`).join('')}</div></div>
-      ${st.kind !== 'todo' ? `<label class="fld">Курс<select name="course">${s.courses.map(c => `<option${c === st.course ? ' selected' : ''}>${c}</option>`).join('')}</select></label>` : ''}
-      <label class="fld">Название<input name="title" value="${esc(st.title)}" placeholder="${st.kind === 'hw' ? 'ДЗ к уроку 20' : st.kind === 'test' ? 'Пробник ЕГЭ' : 'Тема урока'}"></label>
+      ${st.kind !== 'todo' && st.kind !== 'call' ? `<label class="fld">Курс<select name="course">${s.courses.map(c => `<option${c === st.course ? ' selected' : ''}>${c}</option>`).join('')}</select></label>` : ''}
+      <label class="fld">Название<input name="title" value="${esc(st.title)}" placeholder="${st.kind === 'hw' ? 'ДЗ к уроку 20' : st.kind === 'test' ? 'Пробник ЕГЭ' : st.kind === 'call' ? 'Созвон с наставником' : 'Тема урока'}"></label>
       ${st.kind === 'lesson' ? `<label class="fld">Номер урока (если есть)<input name="num" inputmode="numeric" value="${esc(st.num || '')}"></label>` : ''}
       <div class="row"><label class="fld">${st.kind === 'hw' ? 'Дедлайн' : 'Дата'}<input type="date" name="date" value="${esc(st.date || '')}"></label><label class="fld">Время<input type="time" name="time" value="${esc(st.time || '')}"></label></div>
       ${st.kind === 'test' ? `<label class="fld">Можно до (если это период)<input type="date" name="end" value="${esc(st.end || '')}"></label>` : ''}
@@ -748,11 +809,13 @@ function editItem(it = {}, preset = {}) {
       if (e.target.closest('[data-save]')) {
         const pt = el.querySelector('[name="parts"]');
         el.querySelectorAll('[name]').forEach(f => { if (f.name !== 'parts') st[f.name] = f.value; });
+        if (!st.title.trim() && st.kind === 'call') st.title = 'Созвон с наставником';
         if (!st.title.trim()) { toast('Напиши название'); return; }
         if (!st.date && st.kind !== 'lesson') { toast('Нужна дата'); return; }
         const old = S.items[st.id] || {};
         const out = { ...st, title: st.title.trim(), date: st.date || null, num: st.num ? Number(st.num) : undefined, kind: st.kind === 'todo' ? 'hw' : st.kind };
         if (st.kind === 'todo') out.course = 'Своё дело';
+        if (st.kind === 'call') out.course = 'Созвон';
         if (out.kind === 'hw') {
           const lines = pt ? pt.value.split('\n').map(t => t.trim()).filter(Boolean) : (st.parts || []).map(p => p.t);
           const prev = old.parts || [];
@@ -895,6 +958,13 @@ document.addEventListener('click', e => {
     case 'cuopen': S.cuOpen[b.dataset.subj] = !S.cuOpen[b.dataset.subj]; render(); break;
     case 'batch': batchSheet(b.dataset.subj); break;
     case 'settings': settingsSheet(); break;
+    case 'habits': habitsSheet(); break;
+    case 'habit': {
+      const h = b.dataset.h, d = today(), id = `h-${h}-${d}`, was = hDone(h, d);
+      put({ id, kind: 'habit', habit: h, day: d, done: !was });
+      if (!was) { const n = streak(h); toast(n >= 2 ? `Огонёк ${n} ${dn(n)} подряд 🔥` : 'Огонёк зажёгся 🔥'); }
+      break;
+    }
   }
 });
 
